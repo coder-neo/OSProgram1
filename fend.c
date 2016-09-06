@@ -35,45 +35,64 @@ char *read_string(pid_t child, unsigned long addr) {
         }
 
         tmp = ptrace(PTRACE_PEEKDATA, child, addr + read);
-        printf("Read %d, addr %ld, errno %d\n",read,addr,errno);
+       // printf("Read %d, addr %ld, errno %d\n",read,addr,errno);
         if(errno != 0) {
             val[read] = 0;
-            printf("Break 1\n");
+           // printf("Break 1\n");
             break;
         }
         memcpy(val + read, &tmp, sizeof tmp);
         if (memchr(&tmp, 0, sizeof tmp) != NULL)
             {
-              printf("Break 2");
+        //      printf("Break 2");
               break;
             }
         read += sizeof tmp;
     }
-    printf("String read %s\n",val);
+   // printf("String read %s\n",val);
     return val;
 }
 
-void readSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
+void openSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
 {
   char *filepath,*fdpath;
   int size;
-  printf("Read system call\n");
+  long rdi;
+  int flags,mode;
+  printf("Open system call\n");
+  rdi = ptrace(PTRACE_PEEKUSER,sandb->child,regs->rdi);
   filepath = read_string(sandb->child,regs->rdi);
+  flags = regs->rsi;
+  mode = regs->rdx;
+  //memcpy(mode, &regs->rdx, sizeof(int));
+  printf("Flags -> %d, Mode -> %d\n",flags,mode);
   //sprintf(fdpath,"/proc/%u/fd/%llu",sandb->child,regs->rdi);
   //printf("FdPath %s\n",fdpath);
   // size = readlink(fdpath, filepath, 256);  //this gives the filepath for a particular fd
   // printf("size %d",size);
   // filepath[size] = '\0';
-  printf("File-%s-\n", filepath);
+  printf("File->%s\n", filepath);
   // printf("\nread2");
 }
 void writeSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
 {
+  char *fdpath,*filepath;
+  int size;
+  sprintf(fdpath,"/proc/%u/fd/%llu",sb->child,regs->rdi);
+  size = readlink(fdpath, filepath, 256);  //this gives the filepath for a particular fd
+  filepath[size] = '\0';
+  printf("Write File->%s\n", filepath);
   printf("Write system call\n");
 }
-void openSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
+void readSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
 {
-  printf("Open system call\n");
+  char *fdpath,*filepath;
+  int size;
+  sprintf(fdpath,"/proc/%u/fd/%llu",sb->child,regs->rdi);
+  size = readlink(fdpath, filepath, 256);  //this gives the filepath for a particular fd
+  filepath[size] = '\0';
+  printf("Read File->%s\n", filepath);
+  printf("Read system call\n");
 }
 struct sandb_syscall sandb_syscalls[] = {
   {__NR_read,            readSystemCall},
@@ -112,8 +131,6 @@ void sandb_handle_syscall(struct sandbox *sandb) {
       return;
     }
   }
-
-  printf("Outside Callback loop");
 
   if(regs.orig_rax == -1) {
     printf("[SANDBOX] Segfault ?! KILLING !!!\n");
@@ -166,6 +183,7 @@ void sandb_run(struct sandbox *sandb) {
   if(WIFSTOPPED(status)) {
     sandb_handle_syscall(sandb);
   }
+ // ptrace(PTRACE_SYSCALL, sandb->child, 0, 0);
 }
 
 int main(int argc, char **argv) {
