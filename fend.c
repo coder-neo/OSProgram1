@@ -9,11 +9,13 @@
 #include <asm/unistd.h>
 #include <signal.h>
 #include <string.h>
-#include <errno.h>
 #include <sys/time.h>
 #include <sys/types.h>
-
+#include <fnmatch.h>
 #include "parse.h"
+
+//Global config struct contains all globs and permission
+struct Config config;
 
 struct sandbox {
   pid_t child;
@@ -25,76 +27,89 @@ struct sandb_syscall {
   void (*callback)(struct sandbox*, struct user_regs_struct *regs);
 };
 
-char *extract_fileName(pid_t child, unsigned long addr) {
-    char *filePath = malloc(256);
-    int allocated = 256;
-    int read = 0;
-    unsigned long tmp;
-    while (1) {
-        if (read + sizeof tmp > allocated) {
-            allocated *= 2;
-            filePath = realloc(filePath, allocated);
-        }
 
-        tmp = ptrace(PTRACE_PEEKDATA, child, addr + read);
-       // printf("Read %d, addr %ld, errno %d\n",read,addr,errno);
+char* getPermission( char* glob)
+{
+	char *permissions;
+	int i;
+    struct fileConfig* temp;
+    temp = config.paths;
+ 
+    for( i = 0; i < config.size; i++){
+       if(fnmatch(temp->filePath,glob,FNM_PATHNAME) == 0)
+       {
+          permissions = temp->permission;
+       }
+       temp++;
+    }
+	return permissions;
+
+}
+
+char *extract_fileName(pid_t child, unsigned long addr) {
+    char *filePath = malloc(PATH_MAX);
+    int bytesRead = 0;
+    unsigned long data;
+    while (1) {
+        data = ptrace(PTRACE_PEEKDATA, child, addr + bytesRead);
         if(errno != 0) {
-            filePath[read] = 0;
-           // printf("Break 1\n");
+            filePath[bytesRead] = 0;
             break;
         }
-        memcpy(filePath + read, &tmp, sizeof tmp);
-        if (memchr(&tmp, 0, sizeof tmp) != NULL)
+        memcpy(filePath + bytesRead, &data, sizeof data);
+        if (memchr(&data, 0, sizeof data) != NULL)
             {
-        //      printf("Break 2");
               break;
             }
-        read += sizeof tmp;
+        bytesRead += sizeof data;
     }
-   // printf("String read %s\n",filePath);
     return filePath;
 }
 
 void openSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
 {
-  char *filepath,*fdpath;
+  char *filepath;
+  char *absolutePath = malloc(PATH_MAX);
+  char *permission; 
   int size;
   long rdi;
-  int flags,mode;
-  printf("Open system call\n");
-  rdi = ptrace(PTRACE_PEEKUSER,sandb->child,regs->rdi);
+  unsigned long int flags,mode;
   filepath = extract_fileName(sandb->child,regs->rdi);
   flags = regs->rsi;
   mode = regs->rdx;
-  //memcpy(mode, &regs->rdx, sizeof(int));
-  printf("Flags -> %d, Mode -> %d\n",flags,mode);
-  //sprintf(fdpath,"/proc/%u/fd/%llu",sandb->child,regs->rdi);
-  //printf("FdPath %s\n",fdpath);
-  // size = readlink(fdpath, filepath, 256);  //this gives the filepath for a particular fd
-  // printf("size %d",size);
-  // filepath[size] = '\0';
-  printf("File->%s\n", filepath);
-  // printf("\nread2");
+  realpath(filepath, absolutePath);
+  permission = getPermission(absolutePath);
+  
+  printf("Open( %s, %lu, %lu ) = %d\n", absolutePath,flags,mode,errno);
+
 }
+
+// http://stackoverflow.com/questions/33431994/extracting-system-call-name-and-arguments-using-ptrace
 void writeSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
 {
-  char *fdpath,*filepath;
+  char *fdpath = malloc(PATH_MAX);
+  char *filepath = malloc(PATH_MAX);
+  char *absolutePath = malloc(PATH_MAX); 
   int size;
   sprintf(fdpath,"/proc/%u/fd/%llu",sb->child,regs->rdi);
-  size = readlink(fdpath, filepath, 256);  //this gives the filepath for a particular fd
+  size = readlink(fdpath, filepath, PATH_MAX);  
   filepath[size] = '\0';
-  printf("Write File->%s\n", filepath);
-  printf("Write system call\n");
+  realpath(filepath, absolutePath);
+  printf("Write( %s )\n", absolutePath);
 }
+
+// http://stackoverflow.com/questions/33431994/extracting-system-call-name-and-arguments-using-ptrace
 void readSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
 {
-  char *fdpath,*filepath;
+  char *fdpath = malloc(PATH_MAX);
+  char *filepath = malloc(PATH_MAX);
+  char *absolutePath = malloc(PATH_MAX); 
   int size;
   sprintf(fdpath,"/proc/%u/fd/%llu",sb->child,regs->rdi);
-  size = readlink(fdpath, filepath, 256);  //this gives the filepath for a particular fd
+  size = readlink(fdpath, filepath, PATH_MAX);  
   filepath[size] = '\0';
-  printf("Read File->%s\n", filepath);
-  printf("Read system call\n");
+  realpath(filepath, absolutePath);
+  printf("Read( %s )\n", absolutePath);
 }
 struct sandb_syscall sandb_syscalls[] = {
   {__NR_read,            readSystemCall},
@@ -136,10 +151,7 @@ void sandb_handle_syscall(struct sandbox *sandb) {
 
   if(regs.orig_rax == -1) {
     printf("[SANDBOX] Segfault ?! KILLING !!!\n");
-  } else {
-    printf("[SANDBOX] Trying to use devil syscall (%llu) ?!? KILLING !!!\n", regs.orig_rax);
-  }
-  // sandb_kill(sandb);
+  } 
 }
 
 void sandb_init(struct sandbox *sandb, int argc, char **argv) {
@@ -185,27 +197,43 @@ void sandb_run(struct sandbox *sandb) {
   if(WIFSTOPPED(status)) {
     sandb_handle_syscall(sandb);
   }
- // ptrace(PTRACE_SYSCALL, sandb->child, 0, 0);
 }
 
 int main(int argc, char **argv) {
   struct sandbox sandb;
   int i;
   if(argc < 2) {
-    errx(EXIT_FAILURE, "[SANDBOX] Usage : %s <elf> [<arg1...>]", argv[0]);
+    errx(EXIT_FAILURE, "[SANDBOX] Usage : -c ConfigFile command args", argv[0]);
   }
-
-  struct Config config;
   struct fileConfig* temp;
-  config =  parse(".fendrc");
-  temp = config.paths;
+  int skipArgs = 1;
+  char *configPath;
   
+  for (i = 1; i < argc; i++)
+   {
+   	if(strcmp(*(argv+i),"-c") == 0)
+           {
+                configPath = *(argv + i + 1);
+                skipArgs += 2;
+                break;
+           }
+   }
+  if(skipArgs == 1)
+   {
+      configPath = ".fendrc";
+   }
+  printf("Config path is %s\n",configPath);
+
+  config =  parse(configPath);
+  
+  temp = config.paths;
+ 
   for( i = 0; i < config.size; i++){
      printf("Path -> %s,  Permission -> %s\n",temp->filePath, temp->permission);
      temp++;
   }
 
-  sandb_init(&sandb, argc-1, argv+1);
+  sandb_init(&sandb, argc-skipArgs, argv+skipArgs);
 
   for(;;) {
     sandb_run(&sandb);

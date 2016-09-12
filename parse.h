@@ -1,16 +1,16 @@
 #include<stdio.h>
-
+#include <errno.h>
+#include <linux/limits.h>
 typedef enum { false, true } bool;
 
 struct fileConfig{
     char permission[4];
-    bool last;
-    char filePath[256];
+    char filePath[PATH_MAX];
 };
 
 struct Config
 {
-	struct fileConig* paths;
+	struct fileConfig* paths;
 	int size;
 };
 

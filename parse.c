@@ -5,8 +5,20 @@
 struct Config parse(char* fileName)
 {
    
-    FILE* file = fopen(fileName, "r"); /* should check the result */
-    char path[256],permissions[4];
+    FILE* file;
+    file = fopen(fileName, "r"); 
+    
+    if(!file)
+     {
+         file = fopen("~/.fendrc", "r"); 
+         if(!file)
+     	 {
+            printf("Must Provide a config file\n");
+            exit(0);
+         }
+     }
+ 
+    char path[PATH_MAX],permissions[4];
     int nret,i;
     int lines = 0;
     struct fileConfig *paths,*temp;
@@ -15,7 +27,7 @@ struct Config parse(char* fileName)
     while(!feof(file)){
         nret = fscanf(file,"%s %s",&permissions,&path);
         if(nret == 2)
-	    {
+	{
              lines++;
         }
     }
@@ -32,12 +44,7 @@ struct Config parse(char* fileName)
         nret = fscanf(file,"%s %s",&permissions,&path);
 	
 	    memcpy(temp[i].permission,permissions,4 * sizeof(char));
-	    memcpy(temp[i].filePath,path,256 * sizeof(char));
-        temp[i].last = false;	
-	
-        if(i == lines -1){
-	       temp[i].last = true;	
-	    }
+	    memcpy(temp[i].filePath,path,PATH_MAX * sizeof(char));
     }
 
     fclose(file);
