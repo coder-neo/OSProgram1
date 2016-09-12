@@ -1,2 +1,3 @@
-000 /afs/unity.ncsu.edu/users/n/nramcha/OS/OSProgram1/abc.txt
-200 /afs/unity.ncsu.edu/users/n/nramcha/OS/OSProgram1/faltu.txt
+111                 			    /afs/unity.ncsu.edu/users/n/nramcha/OS/OSProgram1/*
+000 /afs/unity.ncsu.edu/users/n/nramcha/OS/OSProgram1
+011                  		/afs/unity.ncsu.edu/users/n/nramcha/OS/OSProgram1/abc.txt

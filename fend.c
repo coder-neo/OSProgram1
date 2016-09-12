@@ -12,6 +12,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <fnmatch.h>
+#include <fcntl.h>
 #include "parse.h"
 
 //Global config struct contains all globs and permission
@@ -30,7 +31,7 @@ struct sandb_syscall {
 
 char* getPermission( char* glob)
 {
-	char *permissions;
+	char *permissions = NULL;
 	int i;
     struct fileConfig* temp;
     temp = config.paths;
@@ -66,21 +67,71 @@ char *extract_fileName(pid_t child, unsigned long addr) {
     return filePath;
 }
 
+void openAtSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
+{
+  char *filepath;
+  char *absolutePath = malloc(PATH_MAX);
+  char *permission;
+  bool readFlag,writeFlag;
+  int size;
+  long rdi;
+  unsigned long int flags,mode;
+  filepath = extract_fileName(sandb->child,regs->rsi);
+  flags = regs->rdx;
+  mode = regs->r10;
+  realpath(filepath, absolutePath);
+  readFlag = true;
+  writeFlag =true;
+  printf("OpenAt( %s, %lu, %lu ) = %d\n", absolutePath,flags,mode,errno);
+  permission = getPermission(absolutePath);
+  if(permission != NULL)
+    {
+        if(permission[0] == '0')
+           readFlag = false;
+        if(permission[1] == '0')
+           writeFlag = false;
+
+        if((flags & O_ACCMODE) == O_WRONLY && !writeFlag)
+           printf("WRITE LOCHA\n");
+        if((flags & O_ACCMODE) == O_RDWR && !readFlag && !writeFlag)
+           printf("READ WRITE LOCHA\n");
+        if((flags & O_ACCMODE) == O_RDONLY && !readFlag)
+           printf("READ LOCHA\n");
+             
+    }
+}
+
 void openSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
 {
   char *filepath;
   char *absolutePath = malloc(PATH_MAX);
-  char *permission; 
-  int size;
+  char *permission;
+  bool readFlag,writeFlag;
   long rdi;
   unsigned long int flags,mode;
   filepath = extract_fileName(sandb->child,regs->rdi);
   flags = regs->rsi;
   mode = regs->rdx;
   realpath(filepath, absolutePath);
-  permission = getPermission(absolutePath);
-  
+  readFlag = true;
+  writeFlag =true;
   printf("Open( %s, %lu, %lu ) = %d\n", absolutePath,flags,mode,errno);
+  permission = getPermission(absolutePath);
+  if(permission != NULL)
+    {
+        if(permission[0] == '0')
+           readFlag = false;
+        if(permission[1] == '0')
+           writeFlag = false;
+
+        if((flags & O_ACCMODE) == O_WRONLY && !writeFlag)
+           printf("WRITE LOCHA\n");
+        if((flags & O_ACCMODE) == O_RDWR && !readFlag && !writeFlag)
+           printf("READ WRITE LOCHA\n");
+        if((flags & O_ACCMODE) == O_RDONLY && !readFlag)
+           printf("READ LOCHA\n");
+             
+    }
 
 }
 
@@ -111,13 +162,38 @@ void readSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   realpath(filepath, absolutePath);
   printf("Read( %s )\n", absolutePath);
 }
+
+void execSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
+{
+
+printf("EXEC\n");
+  /*
+  char *filepath;
+  char *absolutePath = malloc(PATH_MAX);
+  char *permission;
+  
+  filepath = extract_fileName(sb->child,regs->rdi);
+  realpath(filepath, absolutePath);
+  printf("execve( %s ) = %d\n", absolutePath,errno);
+  permission = getPermission(absolutePath);
+  if(permission != NULL)
+    {
+        if(permission[2] == '0')
+           printf("EXEC LOCHA\n");
+             
+    }
+  */
+
+}
 struct sandb_syscall sandb_syscalls[] = {
   {__NR_read,            readSystemCall},
   {__NR_write,           writeSystemCall},
   {__NR_exit,            NULL},
+  {__NR_execve,          execSystemCall},
   {__NR_brk,             NULL},
   {__NR_mmap,            NULL},
   {__NR_access,          NULL},
+  {__NR_openat,          openAtSystemCall},
   {__NR_open,            openSystemCall},
   {__NR_fstat,           NULL},
   {__NR_close,           NULL},
@@ -140,7 +216,7 @@ void sandb_handle_syscall(struct sandbox *sandb) {
 
   if(ptrace(PTRACE_GETREGS, sandb->child, NULL, &regs) < 0)
     err(EXIT_FAILURE, "[SANDBOX] Failed to PTRACE_GETREGS:");
-
+  //printf("SysCall --------------->%lu\n",regs.orig_rax);
   for(i = 0; i < sizeof(sandb_syscalls)/sizeof(*sandb_syscalls); i++) {
     if(regs.orig_rax == sandb_syscalls[i].syscall) {
       if(sandb_syscalls[i].callback != NULL)
