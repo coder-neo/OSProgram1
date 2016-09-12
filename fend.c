@@ -185,6 +185,73 @@ void execSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   
 
 }
+
+
+void rmdirSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
+{
+
+
+  char *filepath;
+  char *absolutePath = malloc(PATH_MAX);
+  char *permission;
+  
+  filepath = extract_fileName(sb->child,regs->rdi);
+  realpath(filepath, absolutePath);
+  printf("rmdir( %s, %lu ) = %d\n", absolutePath,regs->rsi,errno);
+  permission = getPermission(absolutePath);
+  if(permission != NULL)
+    {
+        if(permission[2] == '0')
+           printf("mkdir LOCHA\n");
+             
+    }
+  
+
+}
+
+void chdirSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
+{
+
+
+  char *filepath;
+  char *absolutePath = malloc(PATH_MAX);
+  char *permission;
+  
+  filepath = extract_fileName(sb->child,regs->rdi);
+  realpath(filepath, absolutePath);
+  printf("chdir( %s, %lu ) = %d\n", absolutePath,regs->rsi,errno);
+  permission = getPermission(absolutePath);
+  if(permission != NULL)
+    {
+        if(permission[2] == '0')
+           printf("mkdir LOCHA\n");
+             
+    }
+  
+
+}
+
+void mkdirSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
+{
+
+
+  char *filepath;
+  char *absolutePath = malloc(PATH_MAX);
+  char *permission;
+  
+  filepath = extract_fileName(sb->child,regs->rdi);
+  realpath(filepath, absolutePath);
+  printf("mkdir( %s, %lu ) = %d\n", absolutePath,regs->rsi,errno);
+  permission = getPermission(absolutePath);
+  if(permission != NULL)
+    {
+        if(permission[2] == '0')
+           printf("mkdir LOCHA\n");
+             
+    }
+  
+
+}
 struct sandb_syscall sandb_syscalls[] = {
   {__NR_read,            readSystemCall},
   {__NR_write,           writeSystemCall},
@@ -196,9 +263,9 @@ struct sandb_syscall sandb_syscalls[] = {
   {__NR_openat,          openAtSystemCall},
   {__NR_open,            openSystemCall},
   {__NR_fstat,           NULL},
-  {__NR_close,           NULL},
-  {__NR_mprotect,        NULL},
-  {__NR_munmap,          NULL},
+  {__NR_mkdir,           mkdirSystemCall},
+  {__NR_rmdir,           rmdirSystemCall},
+  {__NR_chdir,           chdirSystemCall},
   {__NR_arch_prctl,      NULL},
   {__NR_exit_group,      NULL},
   {__NR_getdents,        NULL},
@@ -213,7 +280,7 @@ void sandb_kill(struct sandbox *sandb) {
 void sandb_handle_syscall(struct sandbox *sandb) {
   int i;
   struct user_regs_struct regs;
-   ptrace(PTRACE_SETOPTIONS, sandb->child, 0, PTRACE_O_TRACEEXEC);
+  // ptrace(PTRACE_SETOPTIONS, sandb->child, 0, PTRACE_O_TRACEEXEC);
   if(ptrace(PTRACE_GETREGS, sandb->child, NULL, &regs) < 0)
     err(EXIT_FAILURE, "[SANDBOX] Failed to PTRACE_GETREGS:");
   //printf("SysCall --------------->%lu\n",regs.orig_rax);
