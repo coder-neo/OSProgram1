@@ -8,8 +8,8 @@ int main()
 	realpath("faltu.txt", resolved_path);
 	printf("\n%s\n",resolved_path);
         
-        args[0] = "/bin/ls";
-        args[1] = "-lh";
+        args[0] = "./hello";
+        args[1] = "";
         execve(args[0], args, NULL);
          
         return 0; 

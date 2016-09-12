@@ -166,8 +166,8 @@ void readSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
 void execSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
 {
 
-printf("EXEC\n");
-  /*
+//printf("EXEC\n");
+
   char *filepath;
   char *absolutePath = malloc(PATH_MAX);
   char *permission;
@@ -182,7 +182,7 @@ printf("EXEC\n");
            printf("EXEC LOCHA\n");
              
     }
-  */
+  
 
 }
 struct sandb_syscall sandb_syscalls[] = {
@@ -213,7 +213,7 @@ void sandb_kill(struct sandbox *sandb) {
 void sandb_handle_syscall(struct sandbox *sandb) {
   int i;
   struct user_regs_struct regs;
-
+   ptrace(PTRACE_SETOPTIONS, sandb->child, 0, PTRACE_O_TRACEEXEC);
   if(ptrace(PTRACE_GETREGS, sandb->child, NULL, &regs) < 0)
     err(EXIT_FAILURE, "[SANDBOX] Failed to PTRACE_GETREGS:");
   //printf("SysCall --------------->%lu\n",regs.orig_rax);
@@ -242,7 +242,7 @@ void sandb_init(struct sandbox *sandb, int argc, char **argv) {
 
     if(ptrace(PTRACE_TRACEME, 0, NULL, NULL) < 0)
       err(EXIT_FAILURE, "[SANDBOX] Failed to PTRACE_TRACEME:");
-
+    printf("SANDB INIT Exec args: %s, %s\n",argv[0],argv[1]);
     if(execvp(argv[0], argv) < 0)
       err(EXIT_FAILURE, "[SANDBOX] Failed to execv:");
 
@@ -269,6 +269,11 @@ void sandb_run(struct sandbox *sandb) {
 
   if(WIFEXITED(status))
     exit(EXIT_SUCCESS);
+
+  //if( status>>8 == (SIGTRAP | (PTRACE_EVENT_EXEC<<8)))
+  //{
+    //printf("EXEC Called\n");
+  //}
 
   if(WIFSTOPPED(status)) {
     sandb_handle_syscall(sandb);
