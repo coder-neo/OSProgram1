@@ -13,6 +13,8 @@
 #include <sys/time.h>
 #include <sys/types.h>
 
+#include "parse.h"
+
 struct sandbox {
   pid_t child;
   const char *progname;
@@ -23,25 +25,25 @@ struct sandb_syscall {
   void (*callback)(struct sandbox*, struct user_regs_struct *regs);
 };
 
-char *read_string(pid_t child, unsigned long addr) {
-    char *val = malloc(4096);
-    int allocated = 4096;
+char *extract_fileName(pid_t child, unsigned long addr) {
+    char *filePath = malloc(256);
+    int allocated = 256;
     int read = 0;
     unsigned long tmp;
     while (1) {
         if (read + sizeof tmp > allocated) {
             allocated *= 2;
-            val = realloc(val, allocated);
+            filePath = realloc(filePath, allocated);
         }
 
         tmp = ptrace(PTRACE_PEEKDATA, child, addr + read);
        // printf("Read %d, addr %ld, errno %d\n",read,addr,errno);
         if(errno != 0) {
-            val[read] = 0;
+            filePath[read] = 0;
            // printf("Break 1\n");
             break;
         }
-        memcpy(val + read, &tmp, sizeof tmp);
+        memcpy(filePath + read, &tmp, sizeof tmp);
         if (memchr(&tmp, 0, sizeof tmp) != NULL)
             {
         //      printf("Break 2");
@@ -49,8 +51,8 @@ char *read_string(pid_t child, unsigned long addr) {
             }
         read += sizeof tmp;
     }
-   // printf("String read %s\n",val);
-    return val;
+   // printf("String read %s\n",filePath);
+    return filePath;
 }
 
 void openSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
@@ -61,7 +63,7 @@ void openSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
   int flags,mode;
   printf("Open system call\n");
   rdi = ptrace(PTRACE_PEEKUSER,sandb->child,regs->rdi);
-  filepath = read_string(sandb->child,regs->rdi);
+  filepath = extract_fileName(sandb->child,regs->rdi);
   flags = regs->rsi;
   mode = regs->rdx;
   //memcpy(mode, &regs->rdx, sizeof(int));
@@ -188,9 +190,19 @@ void sandb_run(struct sandbox *sandb) {
 
 int main(int argc, char **argv) {
   struct sandbox sandb;
-
+  int i;
   if(argc < 2) {
     errx(EXIT_FAILURE, "[SANDBOX] Usage : %s <elf> [<arg1...>]", argv[0]);
+  }
+
+  struct Config config;
+  struct fileConfig* temp;
+  config =  parse(".fendrc");
+  temp = config.paths;
+  
+  for( i = 0; i < config.size; i++){
+     printf("Path -> %s,  Permission -> %s\n",temp->filePath, temp->permission);
+     temp++;
   }
 
   sandb_init(&sandb, argc-1, argv+1);
