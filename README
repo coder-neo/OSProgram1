@@ -1,0 +1,18 @@
+Sys call Intercepted
+
+execve
+access
+openat
+open
+link
+unlink
+newfstatat
+stat
+lstat
+mkdir
+chdir
+rmdir
+faccessat
+rename
+
+Recursively checked for search/execute access in several syscall if required.

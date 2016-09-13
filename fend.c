@@ -83,8 +83,6 @@ int getDelimCount(char *filename)
 			{
 			    count++;
 			}
-	
-
 	}
 
 	return count;
@@ -115,7 +113,7 @@ char *extract_parent(char *filename, int level)
 
 }
 
-void checkOnParent(char *filePath)
+void checkOnParent(char *filePath, struct sandbox *sandb)
 {
 	int count = getDelimCount(filePath);
     char *permissions;
@@ -129,6 +127,7 @@ void checkOnParent(char *filePath)
          if(permissions != NULL && permissions[2] == '0')
           {
 			printf("ACCESS DENIED : EXECUTE/SEARCH denied on %s\n",extractedPath);
+			terminate(sandb);
             break;
           }
           
@@ -151,7 +150,7 @@ void renameSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   int count = getDelimCount(oldAbsolutePath);
   oldAbsoluteParentPath = extract_parent(oldAbsolutePath,count);
 
-  checkOnParent(oldAbsolutePath);
+  checkOnParent(oldAbsolutePath,sb);
 
   permission1 = getPermission(oldAbsoluteParentPath);
 
@@ -160,7 +159,7 @@ void renameSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   count = getDelimCount(newAbsolutePath);
   newAbsoluteParentPath = extract_parent(newAbsolutePath,count);
 
-  checkOnParent(newAbsolutePath);
+  checkOnParent(newAbsolutePath,sb);
 
   permission2 = getPermission(newAbsoluteParentPath);
 
@@ -201,7 +200,7 @@ void linkSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   int count = getDelimCount(oldAbsolutePath);
   oldAbsoluteParentPath = extract_parent(oldAbsolutePath,count);
 
-  checkOnParent(oldAbsolutePath);
+  checkOnParent(oldAbsolutePath,sb);
 
   permission1 = getPermission(oldAbsoluteParentPath);
 
@@ -210,7 +209,7 @@ void linkSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   count = getDelimCount(newAbsolutePath);
   newAbsoluteParentPath = extract_parent(newAbsolutePath,count);
 
-  checkOnParent(newAbsolutePath);
+  checkOnParent(newAbsolutePath,sb);
 
   permission2 = getPermission(newAbsoluteParentPath);
 
@@ -235,6 +234,7 @@ void openAtSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
   int size;
   long rdi;
   unsigned long int flags,mode;
+  int count;
   filepath = extract_fileName(sandb->child,regs->rsi);
   flags = regs->rdx;
   mode = regs->r10;
@@ -242,6 +242,7 @@ void openAtSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
   readFlag = true;
   writeFlag =true;
   printf("OpenAt( %s, %lu, %lu ) = %d\n", absolutePath,flags,mode,errno);
+  checkOnParent(absolutePath,sandb);
   permission = getPermission(absolutePath);
   if(permission != NULL)
     {
@@ -265,8 +266,29 @@ void openAtSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
 		   printf("ACCESS DENIED : No read Access,%s\n",absolutePath);
 		   terminate(sandb); 
            }
+
+		if((flags & O_CLOEXEC) == O_CLOEXEC && permission[2]== '0')
+           {
+		   printf("ACCESS DENIED : No exec Access,%s\n",absolutePath);
+		   terminate(sandb); 
+           }
              
     }
+
+
+    count = getDelimCount(absolutePath);
+    absolutePath = extract_parent(absolutePath,count);
+    permission = getPermission(absolutePath);
+    if(permission != NULL)
+    { 
+           if((flags & O_CREAT) == O_CREAT && permission[1] == '0')
+           {
+		   printf("ACCESS DENIED : No write Access,%s\n",absolutePath);
+		   terminate(sandb); 
+           }
+     }
+
+    
 }
 
 void openSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
@@ -276,6 +298,7 @@ void openSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
   char *permission;
   bool readFlag,writeFlag;
   long rdi;
+  int count;
   unsigned long int flags,mode;
   filepath = extract_fileName(sandb->child,regs->rdi);
   flags = regs->rsi;
@@ -284,6 +307,7 @@ void openSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
   readFlag = true;
   writeFlag =true;
   printf("Open( %s, %lu, %lu ) = %d\n", absolutePath,flags,mode,errno);
+  checkOnParent(absolutePath,sandb);
   permission = getPermission(absolutePath);
   if(permission != NULL)
     {
@@ -307,8 +331,27 @@ void openSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
 		   printf("ACCESS DENIED : No read Access,%s\n",absolutePath);
 		   terminate(sandb); 
            }
+
+		if((flags & O_CLOEXEC) == O_CLOEXEC && permission[2]== '0')
+           {
+		   printf("ACCESS DENIED : No exec Access,%s\n",absolutePath);
+		   terminate(sandb); 
+           }
              
     }
+
+
+    count = getDelimCount(absolutePath);
+    absolutePath = extract_parent(absolutePath,count);
+    permission = getPermission(absolutePath);
+    if(permission != NULL)
+    { 
+           if((flags & O_CREAT) == O_CREAT && permission[1] == '0')
+           {
+		   printf("ACCESS DENIED : No write Access,%s\n",absolutePath);
+		   terminate(sandb); 
+           }
+     }
 
 }
 
@@ -378,7 +421,7 @@ void rmdirSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   realpath(filepath, absolutePath);
   printf("rmdir( %s, %lu ) = %d\n", absolutePath,regs->rsi,errno);
 
-  checkOnParent(absolutePath);
+  checkOnParent(absolutePath,sb);
 
   int count = getDelimCount(absolutePath);
   absolutePath = extract_parent(absolutePath,count);
@@ -386,9 +429,9 @@ void rmdirSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   //printf("Parent Path - %s\n",absolutePath);
   if(permission != NULL)
     {
-        if(permission[2] == '0')
+        if(permission[1] == '0')
            {
-		   printf("ACCESS DENIED : No execute Access,%s\n",absolutePath);
+		   printf("ACCESS DENIED : No write Access,%s\n",absolutePath);
 		   terminate(sb); 
            }
              
@@ -407,12 +450,42 @@ void chdirSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   filepath = extract_fileName(sb->child,regs->rdi);
   realpath(filepath, absolutePath);
   printf("chdir( %s, %lu ) = %d\n", absolutePath,regs->rsi,errno);
+  checkOnParent(absolutePath,sb);
   permission = getPermission(absolutePath);
   if(permission != NULL)
     {
         if(permission[2] == '0')
            {
 		   printf("ACCESS DENIED : No execute Access,%s\n",absolutePath);
+		   terminate(sb); 
+           }
+             
+    }
+  
+
+}
+
+void unlinkSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
+{
+
+
+  char *filepath;
+  char *absolutePath = malloc(PATH_MAX);
+  char *permission;
+  
+  filepath = extract_fileName(sb->child,regs->rdi);
+  realpath(filepath, absolutePath);
+  printf("unlink( %s) = %d\n", absolutePath,errno);
+  checkOnParent(absolutePath,sb);
+  
+  int count = getDelimCount(absolutePath);
+  absolutePath = extract_parent(absolutePath,count);
+  permission = getPermission(absolutePath);
+  if(permission != NULL)
+    {
+        if(permission[1] == '0')
+           {
+		   printf("ACCESS DENIED : No write Access,%s\n",absolutePath);
 		   terminate(sb); 
            }
              
@@ -433,17 +506,17 @@ void mkdirSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   realpath(filepath, absolutePath);
   printf("mkdir( %s, %lu ) = %d\n", absolutePath,regs->rsi,errno);
  
-  checkOnParent(absolutePath);
+  checkOnParent(absolutePath,sb);
  
- int count = getDelimCount(absolutePath);
+   int count = getDelimCount(absolutePath);
    absolutePath = extract_parent(absolutePath,count);
   permission = getPermission(absolutePath);
   //printf("Parent Path - %s\n",absolutePath);
   if(permission != NULL)
     {
-        if(permission[2] == '0')
+        if(permission[1] == '0')
            {
-		   printf("ACCESS DENIED : No execute Access,%s\n",absolutePath);
+		   printf("ACCESS DENIED : No write Access,%s\n",absolutePath);
 		   terminate(sb); 
            }
              
@@ -467,7 +540,7 @@ void accessSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   printf("access( %s, %d ) = %d\n", absolutePath,regs->rsi,errno);
 
 
-  checkOnParent(absolutePath);
+  checkOnParent(absolutePath,sb);
 
   
   
@@ -505,7 +578,7 @@ void statSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   realpath(filepath, absolutePath);
   printf("stat( %s ) = %d\n", absolutePath,errno);
 
-  checkOnParent(absolutePath); 
+  checkOnParent(absolutePath,sb); 
 
 }
 
@@ -519,9 +592,9 @@ void newfstatatSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   
   filepath = extract_fileName(sb->child,regs->rsi);
   realpath(filepath, absolutePath);
-  printf("stat( %s ) = %d\n", absolutePath,errno);
+  printf("newfstatatSystemCall( %s ) = %d\n", absolutePath,errno);
 
-  checkOnParent(absolutePath); 
+  checkOnParent(absolutePath,sb); 
 
 }
 
@@ -537,7 +610,7 @@ void lStatSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   realpath(filepath, absolutePath);
   printf("lstat( %s ) = %d\n", absolutePath,errno);
 
-  checkOnParent(absolutePath); 
+  checkOnParent(absolutePath,sb); 
 
 }
 
@@ -555,7 +628,7 @@ void faccessAtSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   realpath(filepath, absolutePath);
   printf("access( %s, %d ) = %d\n", absolutePath,regs->rsi,errno);
 
-  checkOnParent(absolutePath);
+  checkOnParent(absolutePath,sb);
 
   permission = getPermission(absolutePath);
   //printf("Parent Path - %s\n",absolutePath);
@@ -585,6 +658,7 @@ struct sandb_syscall sandb_syscalls[] = {
   {__NR_openat,          openAtSystemCall},
   {__NR_open,            openSystemCall},
   {__NR_link,            linkSystemCall},
+  {__NR_unlink,          unlinkSystemCall},
   {__NR_newfstatat,      newfstatatSystemCall},
   {__NR_stat,            statSystemCall},
   {__NR_lstat,           lStatSystemCall},
