@@ -28,7 +28,12 @@ struct sandb_syscall {
   void (*callback)(struct sandbox*, struct user_regs_struct *regs);
 };
 
+void sandb_kill(struct sandbox *sandb);
 
+void terminate(struct sandbox *sandb)
+{
+    sandb_kill(sandb);
+}
 char* getPermission( char* glob)
 {
 	char *permissions = NULL;
@@ -145,25 +150,79 @@ void renameSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   realpath(oldname, oldAbsolutePath);
   int count = getDelimCount(oldAbsolutePath);
   oldAbsoluteParentPath = extract_parent(oldAbsolutePath,count);
+
+  checkOnParent(oldAbsolutePath);
+
   permission1 = getPermission(oldAbsoluteParentPath);
 
   newname = extract_fileName(sb->child,regs->rsi);
   realpath(newname, newAbsolutePath);
-  count = getDelimCount(oldAbsolutePath);
+  count = getDelimCount(newAbsolutePath);
   newAbsoluteParentPath = extract_parent(newAbsolutePath,count);
-  printf("rename( %s, %s ) = %d\n", oldAbsolutePath,newAbsolutePath,errno);
+
+  checkOnParent(newAbsolutePath);
+
   permission2 = getPermission(newAbsoluteParentPath);
+
+ printf("rename( %s, %s ) = %d\n", oldAbsolutePath,newAbsolutePath,errno);
+
   if(permission2 != NULL)
     {
         if(permission2[1] == '0')
+		{
            printf("ACCESS DENIED : Destination parent Directory no write Access\n");
-             
+		   terminate(sb);        
+		}    
     }
  if(permission1 != NULL)
     {
         if(permission1[1] == '0')
+		{
             printf("ACCESS DENIED : Source parent Directory no write Access\n");
-             
+			terminate(sb);         
+		}     
+    }
+
+}
+
+
+void linkSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
+{
+
+  char *oldname,*newname;
+  char *oldAbsolutePath = malloc(PATH_MAX);
+  char *oldAbsoluteParentPath = malloc(PATH_MAX);
+  char *newAbsolutePath = malloc(PATH_MAX);
+  char *newAbsoluteParentPath = malloc(PATH_MAX);
+  char *permission1,*permission2;
+  
+  oldname = extract_fileName(sb->child,regs->rdi);
+  realpath(oldname, oldAbsolutePath);
+  int count = getDelimCount(oldAbsolutePath);
+  oldAbsoluteParentPath = extract_parent(oldAbsolutePath,count);
+
+  checkOnParent(oldAbsolutePath);
+
+  permission1 = getPermission(oldAbsoluteParentPath);
+
+  newname = extract_fileName(sb->child,regs->rsi);
+  realpath(newname, newAbsolutePath);
+  count = getDelimCount(newAbsolutePath);
+  newAbsoluteParentPath = extract_parent(newAbsolutePath,count);
+
+  checkOnParent(newAbsolutePath);
+
+  permission2 = getPermission(newAbsoluteParentPath);
+
+ printf("rename( %s, %s ) = %d\n", oldAbsolutePath,newAbsolutePath,errno);
+
+  if(permission2 != NULL)
+    {
+        if(permission2[1] == '0')
+		{
+           printf("ACCESS DENIED : Destination parent Directory no write Access,%s\n",newAbsoluteParentPath);
+		   terminate(sb); 
+ 		}            
     }
 
 }
@@ -192,11 +251,20 @@ void openAtSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
            writeFlag = false;
 
         if((flags & O_ACCMODE) == O_WRONLY && !writeFlag)
-           printf("WRITE LOCHA\n");
+           {
+		   printf("ACCESS DENIED : No write Access,%s\n",absolutePath);
+		   terminate(sandb); 
+           }
         if((flags & O_ACCMODE) == O_RDWR && !readFlag && !writeFlag)
-           printf("READ WRITE LOCHA\n");
+           {
+		   printf("ACCESS DENIED : No read/write Access,%s\n",absolutePath);
+		   terminate(sandb); 
+           }
         if((flags & O_ACCMODE) == O_RDONLY && !readFlag)
-           printf("READ LOCHA\n");
+           {
+		   printf("ACCESS DENIED : No read Access,%s\n",absolutePath);
+		   terminate(sandb); 
+           }
              
     }
 }
@@ -225,11 +293,20 @@ void openSystemCall(struct sandbox* sandb, struct user_regs_struct *regs)
            writeFlag = false;
 
         if((flags & O_ACCMODE) == O_WRONLY && !writeFlag)
-           printf("WRITE LOCHA\n");
+           {
+		   printf("ACCESS DENIED : No write Access,%s\n",absolutePath);
+		   terminate(sandb); 
+           }
         if((flags & O_ACCMODE) == O_RDWR && !readFlag && !writeFlag)
-           printf("READ WRITE LOCHA\n");
+           {
+		   printf("ACCESS DENIED : No read/write Access,%s\n",absolutePath);
+		   terminate(sandb); 
+           }
         if((flags & O_ACCMODE) == O_RDONLY && !readFlag)
-           printf("READ LOCHA\n");
+           {
+		   printf("ACCESS DENIED : No read Access,%s\n",absolutePath);
+		   terminate(sandb); 
+           }
              
     }
 
@@ -266,7 +343,6 @@ void readSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
 void execSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
 {
 
-//printf("EXEC\n");
 
   char *filepath;
   char *absolutePath = malloc(PATH_MAX);
@@ -279,7 +355,10 @@ void execSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   if(permission != NULL)
     {
         if(permission[2] == '0')
-           printf("EXEC LOCHA\n");
+           {
+		   printf("ACCESS DENIED : No execute Access,%s\n",absolutePath);
+		   terminate(sb); 
+           }
              
     }
   
@@ -308,7 +387,10 @@ void rmdirSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   if(permission != NULL)
     {
         if(permission[2] == '0')
-           printf("mkdir LOCHA\n");
+           {
+		   printf("ACCESS DENIED : No execute Access,%s\n",absolutePath);
+		   terminate(sb); 
+           }
              
     }
 
@@ -329,7 +411,10 @@ void chdirSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   if(permission != NULL)
     {
         if(permission[2] == '0')
-           printf("chdirSystemCall LOCHA\n");
+           {
+		   printf("ACCESS DENIED : No execute Access,%s\n",absolutePath);
+		   terminate(sb); 
+           }
              
     }
   
@@ -357,7 +442,10 @@ void mkdirSystemCall(struct sandbox* sb, struct user_regs_struct *regs)
   if(permission != NULL)
     {
         if(permission[2] == '0')
-           printf("mkdir LOCHA\n");
+           {
+		   printf("ACCESS DENIED : No execute Access,%s\n",absolutePath);
+		   terminate(sb); 
+           }
              
     }
   
@@ -496,7 +584,7 @@ struct sandb_syscall sandb_syscalls[] = {
   {__NR_access,          accessSystemCall},
   {__NR_openat,          openAtSystemCall},
   {__NR_open,            openSystemCall},
-  {__NR_brk,             NULL},
+  {__NR_link,            linkSystemCall},
   {__NR_newfstatat,      newfstatatSystemCall},
   {__NR_stat,            statSystemCall},
   {__NR_lstat,           lStatSystemCall},
